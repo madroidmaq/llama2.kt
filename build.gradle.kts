@@ -23,5 +23,34 @@ kotlin {
 }
 
 application {
-    mainClass.set("Llama2Kt")
+    mainClass.set("Llama2")
+}
+
+tasks.register<Copy>("createJarIfNeeded") {
+    from(sourceSets.main.get().output)
+    into("$buildDir/libs")
+    include("Llama2.jar")
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+    doLast {
+        if (didWork) {
+            println("JAR file created successfully.")
+        } else {
+            println("JAR file already exists.")
+        }
+    }
+}
+
+tasks.register<JavaExec>("executeMain") {
+    dependsOn("createJarIfNeeded")
+    mainClass = "Llama2"
+    val checkPoint = project.findProperty("cp")?.toString()
+    args = listOf(checkPoint)
+    classpath = sourceSets.main.get().runtimeClasspath
+    doFirst {
+        println("Executing main function...")
+    }
+}
+
+tasks.register("completion") {
+    dependsOn("executeMain")
 }
