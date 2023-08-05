@@ -14,21 +14,24 @@ This is the Kotlin implementation of [Andrej Karpathy](https://karpathy.ai/)'s [
 
 1. Compile `Llama2.kt` into a jar package;
 
-\```shell
+```shell
 kotlinc src/main/kotlin/Llama2.kt -include-runtime -d Llama2.jar
-\```
+```
+
 2. Execute the generated jar file using the `java -jar` command, passing in the required `checkpoint` path;
 
-\```shell
+```shell
 java -jar Llama2.jar /path/to/model.bin
-\```
+```
 
 In addition to `checkpoint`, other parameters are also supported, as follows:
 
-\```shell
+```shell
 java -jar llama2.jar /path/to/model.bin 0.9 256 "One day, Lily met a Shoggoth"
-\```
+```
+
 Parameter description:
+
 - `/path/to/model.bin`: Mandatory model file path.
 - `0.9`: Optional parameter, sets the threshold, default is 1.0.
 - `256`: Optional parameter, sets the cache size, default is 512.
@@ -49,9 +52,9 @@ Suddenly, a kind man came by and saw Lily. He asked her what was wrong. Lily tol
 
 Alternatively, you can generate and execute the jar package using a gradle task, as follows:
 
-\```shell
+```shell
 ./gradlew completion -Pcp="/path/to/model.bin"
-\```
+```
 
 ## Performance Data
 
