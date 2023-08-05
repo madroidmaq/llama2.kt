@@ -1,40 +1,40 @@
 # llama2.kt
 
-English | [中文](/docs/README_zh.md)
+[English](../README.md) | 中文
 
-![llama2.kt](docs/llama2.kt.png)
+![llama2.kt](llama2.kt.png)
 
-This is the Kotlin implementation of [Andrej Karpathy](https://karpathy.ai/)'s [llama2.c](https://github.com/karpathy/llama2.c) project.
+这是 [Andrej Karpathy](https://karpathy.ai/) 的 [llama2.c](https://github.com/karpathy/llama2.c) 项目的 Kotlin 实现版本。
 
-## How to Run
+## 如何运行
 
-![15M](docs/model_15M.png)
+![15M](model_15M.png)
 
-### Through the Command Line
+### 通过命令行
 
-1. Compile `Llama2.kt` into a jar package;
+1. 将 `Llama2.kt` 编译 jar 包;
 
-\```shell
+```shell
 kotlinc src/main/kotlin/Llama2.kt -include-runtime -d Llama2.jar
-\```
-2. Execute the generated jar file using the `java -jar` command, passing in the required `checkpoint` path;
+```
+2. 使用 `java -jar` 命令执行生的 jar 文件，需要传入必须的 `checkpoint` 路径；
 
-\```shell
+```shell
 java -jar Llama2.jar /path/to/model.bin
-\```
+```
 
-In addition to `checkpoint`, other parameters are also supported, as follows:
+除了 `checkpoint` 之外，还支持其他的参数，如下：
 
-\```shell
+```shell
 java -jar llama2.jar /path/to/model.bin 0.9 256 "One day, Lily met a Shoggoth"
-\```
-Parameter description:
-- `/path/to/model.bin`: Mandatory model file path.
-- `0.9`: Optional parameter, sets the threshold, default is 1.0.
-- `256`: Optional parameter, sets the cache size, default is 512.
-- `One day, Lily met a Shoggoth`: Optional parameter, sets the prompt for generating the story.
+```
+参数说明:
+- `/path/to/model.bin`：必须的模型文件路径。
+- `0.9`：可选参数，设置阈值，默认为1.0。
+- `256`：可选参数，设置缓存大小，默认为512。
+- `One day, Lily met a Shoggoth`: 可选参数，设置生成故事的 Prompt。
 
-Output content is as follows:
+输出内容如下：
 
 >Once upon a time, there was a little girl named Lily. She loved to play outside in the sunshine. One day, she saw a big, red ball in the sky. It was the sun! She thought it was so pretty.
 Lily wanted to play with the ball, but it was too high up in the sky. She tried to jump and reach it, but she couldn't. Then, she had an idea. She would use a stick to knock the ball down.
@@ -45,21 +45,21 @@ Suddenly, a kind man came by and saw Lily. He asked her what was wrong. Lily tol
 >
 > achieved tok/s: 68.054444
 
-### Through Gradle
+### 通过 Gradle
 
-Alternatively, you can generate and execute the jar package using a gradle task, as follows:
+另外，你也可以使用 gradle task 的方式来生成 jar 包并执行，如下方式：
 
-\```shell
+```shell
 ./gradlew completion -Pcp="/path/to/model.bin"
-\```
+```
 
-## Performance Data
+## 运行性能数据
 
-The following data are all based on tests on Macbook Pro 2019 (2.3 GHz 8-core Intel Core i9). No rigorous performance testing has been done, so there may be fluctuations in actual operation.
+以下数据都是基于 Macbook Pro 2019(2.3 GHz 八核Intel Core i9) 测试，未做严谨的性能测试，所以在实际运行中可能会存在数据波动。
 
 ### Llama2.c
 
-Compile and test using `gcc -o run run.c -lm`. Data is as follows:
+使用 `gcc -o run run.c -lm` 进行编译、测试。数据如下：
 
 |           | parameters                                                   | tok/s |
 |-----------| ------------------------------------------------------------ | ----- |
@@ -67,10 +67,18 @@ Compile and test using `gcc -o run run.c -lm`. Data is as follows:
 | Llama2.c  | [stories42M.bin](https://huggingface.co/karpathy/tinyllamas/resolve/main/stories42M.bin) | 9     |
 | Llama2.c  | [stories110M.bin](https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.bin) | 3     |
 
+
 ### Llama2.kt
+
 
 |           | parameters                                                   | tok/s |
 |-----------| ------------------------------------------------------------ | ----- |
 | Llama2.kt | [stories15M.bin](https://huggingface.co/karpathy/tinyllamas/resolve/main/stories15M.bin) | 61    |
 | Llama2.kt | [stories42M.bin](https://huggingface.co/karpathy/tinyllamas/resolve/main/stories42M.bin) | 22    |
 | Llama2.kt | [stories110M.bin](https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.bin) | 8     |
+
+
+
+
+
+
