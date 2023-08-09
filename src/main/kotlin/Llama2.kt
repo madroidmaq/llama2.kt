@@ -101,14 +101,131 @@ class RunState(config: Config) {
 
     init {
         // Ensure all memory allocations went fine
-        if (x.isEmpty() || xb.isEmpty() || xb2.isEmpty() || hb.isEmpty() || hb2.isEmpty() || q.isEmpty() ||
-            k.isEmpty() || v.isEmpty() || att.isEmpty() || logits.isEmpty() || keyCache.isEmpty() ||
-            valueCache.isEmpty()
-        ) {
+        if (x.isEmpty() || xb.isEmpty() || xb2.isEmpty() || hb.isEmpty() || hb2.isEmpty() || q.isEmpty() || k.isEmpty() || v.isEmpty() || att.isEmpty() || logits.isEmpty() || keyCache.isEmpty() || valueCache.isEmpty()) {
             println("Memory allocation failed!")
             exitProcess(1)
         }
     }
+}
+
+interface Tokenizer {
+    fun encode(text: String): IntArray
+    fun decode(tokens: IntArray): String
+    fun decode(token: Int): String
+
+    companion object {
+        fun from(vocabSize: Int, path: String = "tokenizer.bin"): Tokenizer {
+            return TokenizerImpl(vocabSize, path)
+        }
+    }
+}
+
+class TokenizerImpl(
+    private val vocabSize: Int,
+    path: String,
+) : Tokenizer {
+
+    private val vocab = arrayOfNulls<String>(vocabSize)
+    private val vocabScores = FloatArray(vocabSize)
+
+    init {
+
+        FileChannel.open(Paths.get(path), StandardOpenOption.READ).use { channel ->
+            val bb: ByteBuffer = channel.map(FileChannel.MapMode.READ_ONLY, 0, channel.size())
+            bb.order(ByteOrder.LITTLE_ENDIAN)
+            val maxTokenLength = bb.getInt()
+            for (i in 0 until vocabSize) {
+                vocabScores[i] = bb.getFloat()
+                val len = bb.getInt()
+                val bytes = ByteArray(len)
+                bb[bytes]
+                vocab[i] = String(bytes)
+            }
+        }
+    }
+
+    // ----------------------------------------------------------------------------
+    // byte pair encoding (BPE) tokenizer, encodes strings into tokens so we can prompt
+    private fun strLookup(str: String, vocabSize: Int): Int {
+        // find the first perfect match for str in vocab, return its index or -1 if not found
+        for (i in 0 until vocabSize) {
+            if (str == vocab[i]) {
+                return i
+            }
+        }
+        return -1
+    }
+
+    /**
+     * Byte Pair Encoding
+     * https://huggingface.co/learn/nlp-course/chapter6/5?fw=pt
+     */
+    private fun bytePairEncodingEncode(text: String): IntArray {
+        // first encode every individual byte in the input string
+        val tokens = IntArray(text.length) // 最大可能的大小
+        var nTokens = 0 // the number of tokens
+        for (element in text) {
+            val singleChar = element.toString()
+            val id = strLookup(singleChar, vocabSize)
+            if (id == -1) {
+                System.out.printf("not good\n")
+                System.exit(1)
+            }
+            tokens[nTokens] = id
+            nTokens++
+        }
+
+        // merge the best consecutive pair each iteration, according the scores in vocab_scores
+        while (true) {
+            var bestScore = -1e10f
+            var bestId = -1
+            var bestIdx = -1
+            for (i in 0 until nTokens - 1) {
+                // check if we can merge the pair (tokens[i], tokens[i+1])
+                val strBuffer = vocab[tokens[i]] + vocab[tokens[i + 1]]
+                // sprintf(str_buffer, "%s%s", vocab[tokens[i]], vocab[tokens[i+1]]);
+                val id = strLookup(strBuffer, vocabSize)
+                if (id != -1 && vocabScores[id] > bestScore) {
+                    // this merge pair exists in vocab! record its score and position
+                    bestScore = vocabScores[id]
+                    bestId = id
+                    bestIdx = i
+                }
+            }
+            if (bestIdx == -1) {
+                break // we couldn't find any more pairs to merge, so we're done
+            }
+
+            // merge the consecutive pair (best_idx, best_idx+1) into new token best_id
+            tokens[bestIdx] = bestId
+            // delete token at position best_idx+1, shift the entire sequence back 1
+            for (i in bestIdx + 1 until nTokens - 1) {
+                tokens[i] = tokens[i + 1]
+            }
+            nTokens-- // token length decreased
+        }
+        return tokens.copyOfRange(0, nTokens)
+    }
+
+    override fun encode(text: String): IntArray {
+        return bytePairEncodingEncode(text)
+    }
+
+    override fun decode(token: Int): String {
+        // following BOS token (1), sentencepiece decoder strips any leading whitespace (see PR#89)
+//        val tokenStr = if (token == 1 && vocab[next]!![0] == ' ') {
+        val tokenStr = if (token == 1 && vocab[token]!![0] == ' ') {
+            vocab[token]!!.substring(1)
+        } else {
+            vocab[token]!!
+        }
+        return tokenStr
+    }
+
+    override fun decode(tokens: IntArray): String {
+        return tokens.joinToString(separator = "") { decode(it) }
+    }
+
 }
 
 object Llama2 {
@@ -306,70 +423,6 @@ object Llama2 {
     }
 
     // ----------------------------------------------------------------------------
-    // byte pair encoding (BPE) tokenizer, encodes strings into tokens so we can prompt
-    private fun strLookup(str: String, vocab: Array<String?>, vocabSize: Int): Int {
-        // find the first perfect match for str in vocab, return its index or -1 if not found
-        for (i in 0 until vocabSize) {
-            if (str == vocab[i]) {
-                return i
-            }
-        }
-        return -1
-    }
-
-    private fun bpeEncode(
-        text: String,
-        vocab: Array<String?>,
-        vocabScores: FloatArray,
-        vocabSize: Int,
-        tokens: IntArray,
-    ): Int {
-        // first encode every individual byte in the input string
-        var nTokens = 0 // the number of tokens
-        for (element in text) {
-            val singleChar = element.toString()
-            val id = strLookup(singleChar, vocab, vocabSize)
-            if (id == -1) {
-                System.out.printf("not good\n")
-                System.exit(1)
-            }
-            tokens[nTokens] = id
-            nTokens++
-        }
-
-        // merge the best consecutive pair each iteration, according the scores in vocab_scores
-        while (true) {
-            var bestScore = -1e10f
-            var bestId = -1
-            var bestIdx = -1
-            for (i in 0 until nTokens - 1) {
-                // check if we can merge the pair (tokens[i], tokens[i+1])
-                val strBuffer = vocab[tokens[i]] + vocab[tokens[i + 1]]
-                // sprintf(str_buffer, "%s%s", vocab[tokens[i]], vocab[tokens[i+1]]);
-                val id = strLookup(strBuffer, vocab, vocabSize)
-                if (id != -1 && vocabScores[id] > bestScore) {
-                    // this merge pair exists in vocab! record its score and position
-                    bestScore = vocabScores[id]
-                    bestId = id
-                    bestIdx = i
-                }
-            }
-            if (bestIdx == -1) {
-                break // we couldn't find any more pairs to merge, so we're done
-            }
-
-            // merge the consecutive pair (best_idx, best_idx+1) into new token best_id
-            tokens[bestIdx] = bestId
-            // delete token at position best_idx+1, shift the entire sequence back 1
-            for (i in bestIdx + 1 until nTokens - 1) {
-                tokens[i] = tokens[i + 1]
-            }
-            nTokens-- // token length decreased
-        }
-        return nTokens
-    }
-
-    // ----------------------------------------------------------------------------
     // utilities
     private fun timeInMs(): Long {
         // return time in milliseconds, for benchmarking the model speed
@@ -461,22 +514,7 @@ object Llama2 {
         if (steps <= 0 || steps > config.seqLen) {
             steps = config.seqLen
         }
-
-        // read in the tokenizer.bin file
-        val vocab = arrayOfNulls<String>(config.vocabSize)
-        val vocabScores = FloatArray(config.vocabSize)
-        FileChannel.open(Paths.get("tokenizer.bin"), StandardOpenOption.READ).use { channel ->
-            val bb: ByteBuffer = channel.map(FileChannel.MapMode.READ_ONLY, 0, channel.size())
-            bb.order(ByteOrder.LITTLE_ENDIAN)
-            val maxTokenLength = bb.getInt()
-            for (i in 0 until config.vocabSize) {
-                vocabScores[i] = bb.getFloat()
-                val len = bb.getInt()
-                val bytes = ByteArray(len)
-                bb[bytes]
-                vocab[i] = String(bytes)
-            }
-        }
+        val tokenize = Tokenizer.from(config.vocabSize)
 
         val state = RunState(config)
 
@@ -484,8 +522,8 @@ object Llama2 {
         var promptTokens: IntArray? = null
         var numPromptTokens = 0
         if (prompt != null) {
-            promptTokens = IntArray(config.seqLen)
-            numPromptTokens = bpeEncode(prompt, vocab, vocabScores, config.vocabSize, promptTokens)
+            promptTokens = tokenize.encode(prompt)
+            numPromptTokens = promptTokens.size
         }
 
         // start the main loop
@@ -520,7 +558,7 @@ object Llama2 {
             }
 
             // following BOS token (1), sentencepiece decoder strips any leading whitespace (see PR#89)
-            val tokenStr = if (token == 1 && vocab[next]!![0] == ' ') vocab[next]!!.substring(1) else vocab[next]!!
+            val tokenStr = tokenize.decode(next)
             System.out.printf("%s", tokenStr)
             System.out.flush()
 
