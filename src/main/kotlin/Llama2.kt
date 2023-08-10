@@ -228,7 +228,28 @@ class TokenizerImpl(
 
 }
 
-object Llama2 {
+interface Model {
+    fun generate(tokens: IntArray?, steps: Int, temperature: Float, onTokens: (Int) -> Unit)
+}
+
+class Llama2(private val checkpoint: String) : Model {
+
+    var config: Config
+    private val weights: Weights
+    private val state: RunState
+
+    init {
+        FileChannel.open(Paths.get(checkpoint), StandardOpenOption.READ).use { fileChannel ->
+            val bb: ByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size())
+            bb.order(ByteOrder.LITTLE_ENDIAN)
+            // read in the config header
+            config = Config.from(bb)
+            weights = Weights.from(config, bb.asFloatBuffer())
+        }
+        state = RunState(config)
+    }
+
+
     // ----------------------------------------------------------------------------
     // initialization: read from checkpoint
     // ----------------------------------------------------------------------------
@@ -468,69 +489,24 @@ object Llama2 {
         return maxI
     }
 
-    // ----------------------------------------------------------------------------
-    @Throws(IOException::class)
-    @JvmStatic
-    fun main(args: Array<String>) {
-
-        // poor man's C argparse
-        var checkPoint: String? = null // e.g. out/model.bin
-        var temperature = 0.0f // 0.9f; // e.g. 1.0, or 0.0
-        var steps = 256 // max number of steps to run for, 0: use seq_len
-        var prompt: String? = null // prompt string
-
-        // 'checkpoint' is necessary arg
-        if (args.isEmpty()) {
-            println("Usage: java -jar Llama2.jar <checkpoint_file> [temperature] [steps] [prompt]\n")
-            System.exit(1)
-        }
-        if (args.isNotEmpty()) {
-            checkPoint = args[0]
-        }
-        if (args.size >= 2) {
-            // optional temperature. 0.0 = (deterministic) argmax sampling. 1.0 = baseline
-            temperature = args[1].toFloat()
-        }
-        if (args.size >= 3) {
-            steps = args[2].toInt()
-        }
-        if (args.size >= 4) {
-            prompt = args[3]
-        }
-
+    override fun generate(tokens: IntArray?, steps: Int, temperature: Float, onTokens: (Int) -> Unit) {
         // seed rng with time. if you want deterministic behavior use temperature 0.0
         rngSeed = System.currentTimeMillis() / 1000 // (unsigned int)time(NULL);
-        var config: Config
-        var weights: Weights
-        FileChannel.open(Paths.get(checkPoint), StandardOpenOption.READ).use { fileChannel ->
-            val bb: ByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size())
-            bb.order(ByteOrder.LITTLE_ENDIAN)
-            // read in the config header
-            config = Config.from(bb)
-            weights = Weights.from(config, bb.asFloatBuffer())
+        val maxTokens = if (steps <= 0 || steps > config.seqLen) {
+            config.seqLen
+        } else {
+            steps
         }
+        internalGenerate(tokens, maxTokens, temperature, onTokens)
+    }
 
-        // right now we cannot run for more than config.seq_len steps
-        if (steps <= 0 || steps > config.seqLen) {
-            steps = config.seqLen
-        }
-        val tokenize = Tokenizer.from(config.vocabSize)
-
-        val state = RunState(config)
-
-        // process the prompt, if any
-        var promptTokens: IntArray? = null
-        var numPromptTokens = 0
-        if (prompt != null) {
-            promptTokens = tokenize.encode(prompt)
-            numPromptTokens = promptTokens.size
-        }
-
+    private fun internalGenerate(tokens: IntArray?, steps: Int, temperature: Float, onTokens: (Int) -> Unit) {
         // start the main loop
-        var start: Long = 0 // used to time our code, only initialized after first iteration
         var next: Int // will store the next token in the sequence
         var token = 1 // init with token 1 (=BOS), as done in Llama-2 sentencepiece tokenizer
         var pos = 0 // position in the sequence
+
+        val numPromptTokens = tokens?.size ?: 0
         println("<s>") // explicit print the initial BOS token for stylistic symmetry
         // reasons
         while (pos < steps) {
@@ -539,7 +515,7 @@ object Llama2 {
             transformer(token, pos, config, state, weights)
             if (pos < numPromptTokens) {
                 // if we are still processing the input prompt, force the next prompt token
-                next = promptTokens!![pos]
+                next = tokens!![pos]
             } else {
                 // sample the next token
                 if (temperature == 0.0f) {
@@ -557,22 +533,68 @@ object Llama2 {
                 }
             }
 
-            // following BOS token (1), sentencepiece decoder strips any leading whitespace (see PR#89)
-            val tokenStr = tokenize.decode(next)
-            System.out.printf("%s", tokenStr)
-            System.out.flush()
+            onTokens.invoke(next)
 
             // advance forward
             token = next
             pos++
-            // init our timer here because the first iteration is slow due to memmap
-            if (start == 0L) {
-                start = timeInMs()
-            }
         }
+    }
 
-        // report achieved tok/s
-        val end = timeInMs()
-        System.out.printf("\nachieved tok/s: %f\n", (steps - 1) / (end - start).toDouble() * 1000)
+    companion object {
+
+        // ----------------------------------------------------------------------------
+        @Throws(IOException::class)
+        @JvmStatic
+        fun main(args: Array<String>) {
+
+            // poor man's C argparse
+            var checkPoint: String? = null // e.g. out/model.bin
+            var temperature = 0.0f // 0.9f; // e.g. 1.0, or 0.0
+            var steps = 256 // max number of steps to run for, 0: use seq_len
+            var prompt: String? = null // prompt string
+
+            // 'checkpoint' is necessary arg
+            if (args.isEmpty()) {
+                println("Usage: java -jar Llama2.jar <checkpoint_file> [temperature] [steps] [prompt]\n")
+                System.exit(1)
+            }
+            if (args.isNotEmpty()) {
+                checkPoint = args[0]
+            }
+            if (args.size >= 2) {
+                // optional temperature. 0.0 = (deterministic) argmax sampling. 1.0 = baseline
+                temperature = args[1].toFloat()
+            }
+            if (args.size >= 3) {
+                steps = args[2].toInt()
+            }
+            if (args.size >= 4) {
+                prompt = args[3]
+            }
+
+            val model = Llama2(checkPoint!!)
+
+
+            val tokenize = Tokenizer.from(model.config.vocabSize)
+
+            // process the prompt, if any
+            val promptTokens: IntArray? = if (prompt != null) {
+                tokenize.encode(prompt)
+            } else {
+                null
+            }
+
+            val start = model.timeInMs()
+            model.generate(promptTokens, steps, temperature) { next ->
+                // following BOS token (1), sentencepiece decoder strips any leading whitespace (see PR#89)
+                val tokenStr = tokenize.decode(next)
+                System.out.printf("%s", tokenStr)
+                System.out.flush()
+            }
+            // report achieved tok/s
+            val end = model.timeInMs()
+            System.out.printf("\nachieved tok/s: %f\n", (steps) / (end - start).toDouble() * 1000)
+        }
     }
 }
