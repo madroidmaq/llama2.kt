@@ -42,7 +42,7 @@ tasks.register<Copy>("createJarIfNeeded") {
 
 tasks.register<JavaExec>("executeMain") {
     dependsOn("createJarIfNeeded")
-    mainClass = "Llama2"
+    mainClass = "Llama2Kt"
     val checkPoint = project.findProperty("cp")?.toString()
     args = listOf(checkPoint)
     classpath = sourceSets.main.get().runtimeClasspath
