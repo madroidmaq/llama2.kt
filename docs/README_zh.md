@@ -78,7 +78,8 @@ Suddenly, a kind man came by and saw Lily. He asked her what was wrong. Lily tol
 | Llama2.kt | [stories110M.bin](https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.bin) | 8     |
 
 
+## 更多内容
 
-
-
+- [如何训练模型？](tutorials/train.md)
+- [如何调试评估模型？](tutorials/evaluation.md)
 
